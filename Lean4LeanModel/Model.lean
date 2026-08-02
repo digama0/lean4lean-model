@@ -27,10 +27,17 @@ universe u
 /--
 A model of `env`.
 
-To be defined. Whatever the definition ends up being, it has to supply just two things: enough
-structure to validate the judgments of `env` (`VEnv.HasType`, `VEnv.IsDefEq`), and enough
-non-degeneracy that `∀ (p : Prop), p` comes out uninhabited. `Model.consistent` is what turns
-that into consistency.
+To be defined. Whatever the definition ends up being, it has to supply enough structure to
+validate the judgments of `env` (`VEnv.HasType`, `VEnv.IsDefEq`), and nothing more.
+
+In particular it does *not* require non-degeneracy, following the usual practice in categorical
+semantics: the trivial model -- every type interpreted as terminal -- is a model of any type
+theory, and is the terminal object in the category of models, so a class of models closed under
+the constructions one actually uses has to contain it. "Has a model" is therefore vacuous on its
+own; consistency comes from a model that additionally satisfies `Nondegenerate` below. This is
+unlike first-order logic, where satisfaction of `⊥` is false by definition of satisfaction and so
+every structure is non-degenerate for free. The syntactic model makes the point: it is
+non-degenerate exactly when the theory is consistent, so initiality alone never gives consistency.
 
 Deliberately *not* part of it: sets, cardinality, or any commitment that `∀ (x : α), β` is
 interpreted by the full function space. A term model -- syntax quotiented by definitional
@@ -46,6 +53,21 @@ placeholder still depends on its argument: with `def Model (env : VEnv) := sorry
 def Model : VEnv → Type (u+1) := sorry
 
 /--
+A model is non-degenerate when it interprets `∀ (p : Prop), p` by something uninhabited.
+
+To be defined alongside `Model`. Since every type theory has the trivial model, this -- and not
+the existence of a model -- is what carries consistency.
+-/
+def Model.Nondegenerate {env : VEnv} : Model.{u} env → Prop := sorry
+
+/-- **Soundness.** An environment with a non-degenerate model proves no closed instance of
+`∀ (p : Prop), p`: a closed proof would be interpreted as an element of the interpretation of that
+type, which `Nondegenerate` says is empty. -/
+theorem Model.consistent {env : VEnv} (m : Model.{u} env) (_ : m.Nondegenerate) :
+    Consistent env := by
+  sorry
+
+/--
 **Extension.** A model of `base` extends to a model of any environment that assumes nothing
 beyond `base`.
 
@@ -57,10 +79,16 @@ Everything that is not an axiom is interpreted here: `def`, `opaque` and `exampl
 def Model.extend {base env : VEnv} (_ : Model.{u} base) (_ : ExtendsAxioms base env) :
     Model.{u} env := sorry
 
-/-- **Soundness.** An environment with a model proves no closed instance of `∀ (p : Prop), p`:
-a closed proof of it would be interpreted as an element of the interpretation of that type, which
-the non-degeneracy required of a model forbids. -/
-theorem Model.consistent {env : VEnv} (_ : Model.{u} env) : Consistent env := by
+/--
+**Extension is conservative.** Interpreting further definitions, quotients and inductives does not
+make `∀ (p : Prop), p` inhabited.
+
+This is a separate obligation on purpose. Folding non-degeneracy into `Model` would hide it inside
+`Model.extend`, where it is easy to overlook -- and it is not a bookkeeping step: it is the reason
+a definitional extension cannot prove anything new.
+-/
+theorem Model.extend_nondegenerate {base env : VEnv} (m : Model.{u} base)
+    (h : ExtendsAxioms base env) (_ : m.Nondegenerate) : (m.extend h).Nondegenerate := by
   sorry
 
 /-! ## The two bases -/
@@ -74,6 +102,9 @@ dropped, strengthening `consistent_of_axiomFree` to hold outright.
 -/
 def emptyModel (_ : OmegaInaccessibles.{u}) : Model.{u} .empty := sorry
 
+theorem emptyModel_nondegenerate (h : OmegaInaccessibles.{u}) : (emptyModel h).Nondegenerate := by
+  sorry
+
 /--
 **Lean's axioms have a model.** The construction in mind is set-theoretic: `Sort n` interpreted by
 the `n`-th inaccessible, `Prop` two-valued and proof-irrelevantly (validating `propext`), `Quot`
@@ -84,6 +115,12 @@ This is the only place the axioms are inspected.
 -/
 def leanAxiomModel (_ : OmegaInaccessibles.{u}) : Model.{u} leanAxiomEnv := sorry
 
+/-- Lean's axioms are not merely modeled but consistently so: the set-theoretic interpretation
+sends `∀ (p : Prop), p` to the empty set. -/
+theorem leanAxiomModel_nondegenerate (h : OmegaInaccessibles.{u}) :
+    (leanAxiomModel h).Nondegenerate := by
+  sorry
+
 /-! ## The headline theorems -/
 
 /--
@@ -92,7 +129,8 @@ no falsehood.
 -/
 theorem consistent_of_axiomFree (h : OmegaInaccessibles.{u}) {env : VEnv}
     (hext : ExtendsAxioms .empty env) : Consistent env :=
-  ((emptyModel h).extend hext).consistent
+  ((emptyModel h).extend hext).consistent <|
+    (emptyModel h).extend_nondegenerate hext (emptyModel_nondegenerate h)
 
 /--
 **Consistency of Lean.** An environment whose axioms are Lean's three -- `propext`, `Quot.sound`
@@ -100,6 +138,7 @@ and `Classical.choice` -- and which otherwise only defines things, proves no fal
 -/
 theorem consistency (h : OmegaInaccessibles.{u}) {env : VEnv}
     (hext : ExtendsAxioms leanAxiomEnv env) : Consistent env :=
-  ((leanAxiomModel h).extend hext).consistent
+  ((leanAxiomModel h).extend hext).consistent <|
+    (leanAxiomModel h).extend_nondegenerate hext (leanAxiomModel_nondegenerate h)
 
 end Lean4LeanModel
