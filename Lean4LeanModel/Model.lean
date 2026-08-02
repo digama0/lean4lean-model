@@ -27,12 +27,23 @@ universe u
 /--
 A model of `env`.
 
-To be defined: an interpretation of `VLevel` into cardinals below the assumed inaccessibles, of
-`VExpr` into that hierarchy, and of `env`'s constants, such that `VEnv.HasType` and
-`VEnv.IsDefEq` hold of the interpretations. `Type 1` is a placeholder; the real definition fixes
-the universe.
+To be defined. Whatever the definition ends up being, it has to supply just two things: enough
+structure to validate the judgments of `env` (`VEnv.HasType`, `VEnv.IsDefEq`), and enough
+non-degeneracy that `∀ (p : Prop), p` comes out uninhabited. `Model.consistent` is what turns
+that into consistency.
+
+Deliberately *not* part of it: sets, cardinality, or any commitment that `∀ (x : α), β` is
+interpreted by the full function space. A term model -- syntax quotiented by definitional
+equality -- and countable models where the interpretation of a function type is some subset of
+the functions must both qualify. Pinning the notion to ZFC function spaces would rule those out
+for no gain: the set-theoretic hierarchy is how `leanAxiomModel` is expected to be built, but that
+is a fact about one construction, not about what a model is.
+
+Written point-free (`VEnv → Type _` rather than a parameter to the left of the colon) so that the
+placeholder still depends on its argument: with `def Model (env : VEnv) := sorry` the body ignores
+`env` and every `Model env` is definitionally the same type.
 -/
-def Model (env : VEnv) : Type 1 := sorry
+def Model : VEnv → Type (u+1) := sorry
 
 /--
 **Extension.** A model of `base` extends to a model of any environment that assumes nothing
@@ -43,28 +54,35 @@ Everything that is not an axiom is interpreted here: `def`, `opaque` and `exampl
 `VInductDecl.WF`. The inductive case is blocked upstream, where `VInductDecl.WF` and
 `VEnv.addInduct` are still `sorry` and so supply nothing to interpret.
 -/
-def Model.extend {base env : VEnv} (_ : Model base) (_ : ExtendsAxioms base env) : Model env :=
-  sorry
+def Model.extend {base env : VEnv} (_ : Model.{u} base) (_ : ExtendsAxioms base env) :
+    Model.{u} env := sorry
 
 /-- **Soundness.** An environment with a model proves no closed instance of `∀ (p : Prop), p`:
-the interpretation of such a proof would inhabit the interpretation of `∀ (p : Prop), p`, which is
-empty because `Prop` is interpreted two-valued and proof-irrelevantly. -/
-theorem Model.consistent {env : VEnv} (_ : Model env) : Consistent env := by
+a closed proof of it would be interpreted as an element of the interpretation of that type, which
+the non-degeneracy required of a model forbids. -/
+theorem Model.consistent {env : VEnv} (_ : Model.{u} env) : Consistent env := by
   sorry
 
 /-! ## The two bases -/
 
-/-- The empty environment has a model: the universe hierarchy alone, interpreting no constants. -/
-def emptyModel (_ : OmegaInaccessibles.{u}) : Model .empty := sorry
+/--
+The empty environment has a model: the universe hierarchy alone, interpreting no constants.
+
+The inaccessibles are assumed here because a set-theoretic model needs them. A term model would
+not -- it would need normalization instead -- so if that route is taken this hypothesis can be
+dropped, strengthening `consistent_of_axiomFree` to hold outright.
+-/
+def emptyModel (_ : OmegaInaccessibles.{u}) : Model.{u} .empty := sorry
 
 /--
-**Lean's axioms have a model.** `Sort n` is interpreted by the `n`-th inaccessible, `Prop`
-two-valued and proof-irrelevantly, which validates `propext`; `Quot` by quotients, which validates
-`Quot.sound`; and `Classical.choice` by choice in the metatheory.
+**Lean's axioms have a model.** The construction in mind is set-theoretic: `Sort n` interpreted by
+the `n`-th inaccessible, `Prop` two-valued and proof-irrelevantly (validating `propext`), `Quot`
+by quotients (validating `Quot.sound`), and `Classical.choice` by choice in the metatheory. Any
+other structure meeting `Model` would do just as well.
 
 This is the only place the axioms are inspected.
 -/
-def leanAxiomModel (_ : OmegaInaccessibles.{u}) : Model leanAxiomEnv := sorry
+def leanAxiomModel (_ : OmegaInaccessibles.{u}) : Model.{u} leanAxiomEnv := sorry
 
 /-! ## The headline theorems -/
 
