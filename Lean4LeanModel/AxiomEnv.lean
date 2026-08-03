@@ -29,12 +29,14 @@ private def cval (name : Name) (c : VConstant) : VConstVal := { toVConstant := c
 def eqDecl : VConstVal := cval ``Eq vconst(type_of% @Eq)
 def eqReflDecl : VConstVal := cval ``Eq.refl vconst(type_of% @Eq.refl)
 def eqRecDecl : VConstVal := cval ``Eq.rec vconst(type_of% @Eq.rec)
+def eqDefEq : VDefEq := vdefeq(α a motive m => @Eq.rec α a motive m a (Eq.refl a) ≡ m)
 
 /-! ## Iff -/
 
 def iffDecl : VConstVal := cval ``Iff vconst(type_of% @Iff)
 def iffIntroDecl : VConstVal := cval ``Iff.intro vconst(type_of% @Iff.intro)
 def iffRecDecl : VConstVal := cval ``Iff.rec vconst(type_of% @Iff.rec)
+def iffDefEq : VDefEq := vdefeq(a b motive f mp mpr => @Iff.rec a b motive f (Iff.intro mp mpr) ≡ f mp mpr)
 
 /-! ## Nonempty -/
 
@@ -81,13 +83,7 @@ bridging result identifying a real environment, built from `VEnv.empty` with `Eq
 declared as inductives, with an extension of this base; that comparison needs the `VDefEq`s
 emitted by `VEnv.addInduct`, still `sorry` upstream.
 -/
-def leanAxiomDefEqs : List VDefEq :=
-  [quotDefEq,
-   -- `Eq.refl a`, not `rfl`: `rfl` is a separate constant in core, and every constant named here
-   -- must be one the base itself declares.
-   vdefeq(α a motive m => @Eq.rec α a motive m a (Eq.refl a) ≡ m),
-   vdefeq(a b motive f mp mpr => @Iff.rec a b motive f (Iff.intro mp mpr) ≡ f mp mpr),
-   vdefeq(α motive f a => @Nonempty.rec α motive f (Nonempty.intro a) ≡ f a)]
+def leanAxiomDefEqs : List VDefEq := [quotDefEq, eqDefEq, iffDefEq]
 
 /--
 The Lean 4 axiom environment: the three axioms plus the constants and computation rules that give

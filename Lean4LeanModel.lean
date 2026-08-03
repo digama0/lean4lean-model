@@ -1,4 +1,4 @@
 import Lean4LeanModel.DeclarationPolicy
 import Lean4LeanModel.AxiomEnv
-import Lean4LeanModel.Consistency
 import Lean4LeanModel.Model
+import Lean4LeanModel.Consistency

@@ -40,11 +40,8 @@ private def falseAxiom : VConstVal where
 Well-formedness alone never implies consistency: an environment may declare `∀ (p : Prop), p` as
 an axiom. So consistency can only ever be stated relative to what an environment is allowed to
 assume, which is what `ExtendsAxioms` pins down.
-
-(From https://github.com/digama0/lean4lean-model/pull/1.)
 -/
-theorem exists_inconsistent_wf_environment :
-    ∃ env : VEnv, env.WF ∧ ¬ Consistent env := by
+theorem exists_inconsistent_wf_environment : ∃ env : VEnv, env.WF ∧ ¬ Consistent env := by
   have hfalse : VConstant.WF .empty falseAxiom.toVConstant :=
     ⟨.imax (.succ .zero) .zero, .forallEDF (.sortDF (by trivial) (by trivial) rfl) (.bvar .zero)⟩
   have hadd : ∃ env, VEnv.empty.addConst falseAxiom.name falseAxiom.toVConstant = some env := by
