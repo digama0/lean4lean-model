@@ -25,38 +25,11 @@ namespace Lean4LeanModel
 
 open Lean4Lean
 
-/--
-Which declarations may extend the base, parameterized by which axioms are permitted.
-
-The match is deliberately exhaustive: a new declaration form upstream must be reviewed before it
-enters the modeled fragment.
--/
-def DeclPolicy (axioms : VConstVal → Prop) : VDecl → Prop
-  | .block _ => True
-  | .axiom ci => axioms ci
-  | .def _ => True
-  | .opaque _ => True
-  | .example _ => True
-  | .quot => True
-  | .induct _ => True
-
-/--
-Every declaration form except `axiom`.
-
-`def`, `opaque` and `example` require a value, `quot` adds the quotient constants and their
-computation rule (`Quot.sound` is an axiom and so lives in the base), and `induct` is constrained
-by `VInductDecl.WF`. None of them lets an environment assume anything new.
--/
-def NoAxioms : VDecl → Prop := DeclPolicy fun _ => False
-
-/-- `env` is reachable from `base` by declarations satisfying `allowed`. -/
-inductive ExtendsBy (allowed : VDecl → Prop) (base : VEnv) : VEnv → Prop where
-  | refl : ExtendsBy allowed base base
-  | decl {env env' : VEnv} {d : VDecl} : ExtendsBy allowed base env →
-      VDecl.WF env d env' → allowed d → ExtendsBy allowed base env'
-
-/-- `env` assumes nothing beyond `base`: it is reachable from `base` without declaring an axiom. -/
-abbrev NoNewAxioms (base env : VEnv) : Prop := ExtendsBy NoAxioms base env
+/-- `env` is reachable from `base` without adding axioms. -/
+inductive NoNewAxioms (base : VEnv) : VEnv → Prop where
+  | refl : NoNewAxioms base base
+  | decl {d : VDecl} : NoNewAxioms base env →
+    d.WF env env' → !d matches .axiom _ → NoNewAxioms base env'
 
 /--
 The relation the consistency theorems use: `env` adds no axioms to *some* sub-environment of
@@ -71,24 +44,17 @@ reject through its `≤` component.
 def ExtendsAxioms (base env : VEnv) : Prop := ∃ base', base' ≤ base ∧ NoNewAxioms base' env
 
 namespace ExtendsBy
-variable {allowed allowed' : VDecl → Prop} {base env : VEnv}
+variable {base env : VEnv}
 
 /-- Extending is transitive, so a base may be reached in stages. -/
-theorem trans {a b c : VEnv} (h₁ : ExtendsBy allowed a b) (h₂ : ExtendsBy allowed b c) :
-    ExtendsBy allowed a c := by
+theorem trans {a b c : VEnv} (h₁ : NoNewAxioms a b) (h₂ : NoNewAxioms b c) :
+    NoNewAxioms a c := by
   induction h₂ with
   | refl => exact h₁
   | decl _ hd ha ih => exact .decl ih hd ha
 
-/-- Weakening the policy preserves reachability. -/
-theorem mono (h : ExtendsBy allowed base env) (hle : ∀ d, allowed d → allowed' d) :
-    ExtendsBy allowed' base env := by
-  induction h with
-  | refl => exact .refl
-  | decl _ hd ha ih => exact .decl ih hd (hle _ ha)
-
 /-- Everything reachable from `VEnv.empty` is well-formed. -/
-theorem wf (h : ExtendsBy allowed .empty env) : VEnv.WF env := by
+theorem wf (h : NoNewAxioms .empty env) : VEnv.WF env := by
   induction h with
   | refl => exact ⟨[], .empty⟩
   | decl _ hd _ ih => exact let ⟨ds, hds⟩ := ih; ⟨_ :: ds, .decl hd hds⟩
@@ -107,7 +73,7 @@ theorem NoNewAxioms.le {base env : VEnv} (h : NoNewAxioms base env) : base ≤ e
   | @decl env env' d _ hd ha ih =>
     refine VEnv.LE.trans ih ?_
     cases hd with
-    | «axiom» => exact absurd ha (by simp [NoAxioms, DeclPolicy])
+    | «axiom» => cases ha
     | «def» _ h => exact VEnv.LE.trans (VEnv.addConst_le h) VEnv.addDefEq_le
     | «opaque» _ h => exact VEnv.addConst_le h
     | «example» _ => exact .rfl
@@ -127,9 +93,8 @@ theorem NoNewAxioms.le {base env : VEnv} (h : NoNewAxioms base env) : base ≤ e
       | some env4 =>
         simp [h1, h2, h3, h4] at h
         subst h
-        exact VEnv.LE.trans (VEnv.addConst_le h1) <| VEnv.LE.trans (VEnv.addConst_le h2) <|
-          VEnv.LE.trans (VEnv.addConst_le h3) <|
-            VEnv.LE.trans (VEnv.addConst_le h4) VEnv.addDefEq_le
+        exact (VEnv.addConst_le h1).trans  <| (VEnv.addConst_le h2).trans <|
+          (VEnv.addConst_le h3).trans <| (VEnv.addConst_le h4).trans VEnv.addDefEq_le
     | induct _ h =>
       -- blocked upstream: `VEnv.addInduct` is `sorry`, so nothing can be said about the
       -- environment it produces.

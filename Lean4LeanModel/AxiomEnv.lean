@@ -1,6 +1,6 @@
 import Lean4Lean.Theory.Quot
 import Lean4Lean.Theory.Meta
-import Lean4LeanModel.DeclarationPolicy
+import Lean4LeanModel.ExtendsAxioms
 
 /-!
 # The Lean 4 axiom environment
