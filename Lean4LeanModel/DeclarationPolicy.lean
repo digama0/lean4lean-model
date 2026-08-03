@@ -1,56 +1,35 @@
 import Lean4Lean.Theory.Typing.Env
+import Lean4Lean.Theory.Typing.Lemmas
 
 /-!
-# Declaration policies
+# Extending an environment
 
 `Lean4Lean.VEnv.WF` permits arbitrary well-typed axioms -- including `∀ (p : Prop), p` -- so
 consistency is never a consequence of well-formedness alone. What an environment may assume is
-therefore isolated into a *base environment*, and the remaining declarations are constrained by a
-policy saying that they introduce nothing new to assume.
+therefore isolated into a *base environment*, and everything else is built on top of it by
+declarations that assume nothing: every `VDecl.WF` constructor except `axiom`.
 
-The `WFUnder` machinery is from https://github.com/digama0/lean4lean-model/pull/1.
+Building *from* the base, rather than checking a history that starts from `VEnv.empty`, is what
+makes the base's meanings stick. The base already declares `Eq`, `Nonempty` and friends, so
+`VEnv.addConst` rejects any later declaration of those names, and no definition can install a
+same-typed impostor. Pinning the constants alone would not be enough: `Nonempty α` is a `Prop`, so
+with `proofIrrel` and `Classical.choice` in scope, a definition `Nonempty := fun _ => ⊤` admits
+`fun h t => h (Classical.choice t)` as its own `Nonempty.rec`, and then `Classical.choice` inhabits
+every type.
+
+The counterexample below and the idea of constraining the declaration history are from
+https://github.com/digama0/lean4lean-model/pull/1.
 -/
 
 namespace Lean4LeanModel
 
 open Lean4Lean
 
-/-- A well-formed environment with a declaration history accepted by `allowed`. -/
-def WFUnder (allowed : VDecl → Prop) (env : VEnv) : Prop :=
-  ∃ ds, VEnv.WF' ds env ∧ ∀ d ∈ ds, allowed d
-
-/-- Forgetting the declaration policy leaves an ordinary well-formed environment. -/
-theorem WFUnder.wf {allowed : VDecl → Prop} {env : VEnv} :
-    WFUnder allowed env → VEnv.WF env
-  | ⟨ds, hds, _⟩ => ⟨ds, hds⟩
-
-/-- Extend a policy-compliant history by one policy-compliant declaration. -/
-theorem WFUnder.decl {allowed : VDecl → Prop} {env env' : VEnv} {d : VDecl}
-    (h : WFUnder allowed env) (hd : VDecl.WF env d env') (ha : allowed d) :
-    WFUnder allowed env' := by
-  obtain ⟨ds, hds, hall⟩ := h
-  refine ⟨d :: ds, .decl hd hds, ?_⟩
-  intro d' hd'
-  simp only [List.mem_cons] at hd'
-  rcases hd' with rfl | hd'
-  · exact ha
-  · exact hall d' hd'
-
-/-- Weakening a declaration policy preserves well-formedness under that policy. -/
-theorem WFUnder.mono {allowed allowed' : VDecl → Prop} {env : VEnv}
-    (h : WFUnder allowed env) (hle : ∀ d, allowed d → allowed' d) :
-    WFUnder allowed' env := by
-  obtain ⟨ds, hds, hall⟩ := h
-  exact ⟨ds, hds, fun d hd => hle d (hall d hd)⟩
-
 /--
-Which declarations a history may contain, parameterized by which axioms are permitted.
+Which declarations may extend the base, parameterized by which axioms are permitted.
 
 The match is deliberately exhaustive: a new declaration form upstream must be reviewed before it
-enters the modeled fragment. Everything other than `axiom` is allowed, since no other form lets an
-environment assume anything: `def`, `opaque` and `example` require a value, `quot` adds the
-quotient constants and computation rule (`Quot.sound` is a separate axiom), and `induct` is
-constrained by `VInductDecl.WF`.
+enters the modeled fragment.
 -/
 def DeclPolicy (axioms : VConstVal → Prop) : VDecl → Prop
   | .block _ => True
@@ -62,32 +41,102 @@ def DeclPolicy (axioms : VConstVal → Prop) : VDecl → Prop
   | .induct _ => True
 
 /--
-The `#print axioms`-style check: every axiom in the history is one that `base` already declares,
-with the same type. Since `VEnv.addConst` rejects a name the environment already has, this says
-exactly that the history introduces *no* axiom of its own.
+Every declaration form except `axiom`.
+
+`def`, `opaque` and `example` require a value, `quot` adds the quotient constants and their
+computation rule (`Quot.sound` is an axiom and so lives in the base), and `induct` is constrained
+by `VInductDecl.WF`. None of them lets an environment assume anything new.
 -/
-def NoNewAxioms (base : VEnv) : VDecl → Prop :=
-  DeclPolicy fun ci => base.constants ci.name = some ci.toVConstant
+def NoAxioms : VDecl → Prop := DeclPolicy fun _ => False
+
+/-- `env` is reachable from `base` by declarations satisfying `allowed`. -/
+inductive ExtendsBy (allowed : VDecl → Prop) (base : VEnv) : VEnv → Prop where
+  | refl : ExtendsBy allowed base base
+  | decl {env env' : VEnv} {d : VDecl} : ExtendsBy allowed base env →
+      VDecl.WF env d env' → allowed d → ExtendsBy allowed base env'
+
+/-- `env` assumes nothing beyond `base`: it is reachable from `base` without declaring an axiom. -/
+abbrev NoNewAxioms (base env : VEnv) : Prop := ExtendsBy NoAxioms base env
 
 /--
-`env` assumes nothing beyond `base`: it is well-formed, its axioms are `base`'s axioms, and it
-retains `base`'s constants and definitional equalities.
+The relation the consistency theorems use: `env` adds no axioms to *some* sub-environment of
+`base`.
 
-This is decidable in the declaration history, which is what makes it an effective check on a real
-environment: walk the history and confirm each `axiom` against the `base` table.
+Weaker than `NoNewAxioms base env`, and weak enough on purpose. Soundness is monotonic in the
+trivial direction -- a model of `base` restricts to a model of any `base' ≤ base`, since there is
+less to interpret and less to validate -- so a model of `base` still yields one of `env`. This
+covers an environment that never declares some of the base's constants, which `NoNewAxioms` would
+reject through its `≤` component.
 -/
-structure ExtendsAxioms (base env : VEnv) : Prop where
-  /-- The history introduces no axiom that `base` does not already declare. -/
-  noNewAxioms : WFUnder (NoNewAxioms base) env
-  /-- `env` keeps the constants and definitional equalities of `base`. -/
-  le : base ≤ env
+def ExtendsAxioms (base env : VEnv) : Prop := ∃ base', base' ≤ base ∧ NoNewAxioms base' env
 
-theorem ExtendsAxioms.wf {base env : VEnv} (h : ExtendsAxioms base env) : VEnv.WF env :=
-  h.noNewAxioms.wf
+namespace ExtendsBy
+variable {allowed allowed' : VDecl → Prop} {base env : VEnv}
 
-/-- Over the empty base, `NoNewAxioms` forbids axioms outright. -/
-theorem noNewAxioms_empty_iff {d : VDecl} :
-    NoNewAxioms .empty d ↔ DeclPolicy (fun _ => False) d := by
-  cases d <;> simp [NoNewAxioms, DeclPolicy, VEnv.empty]
+/-- Extending is transitive, so a base may be reached in stages. -/
+theorem trans {a b c : VEnv} (h₁ : ExtendsBy allowed a b) (h₂ : ExtendsBy allowed b c) :
+    ExtendsBy allowed a c := by
+  induction h₂ with
+  | refl => exact h₁
+  | decl _ hd ha ih => exact .decl ih hd ha
+
+/-- Weakening the policy preserves reachability. -/
+theorem mono (h : ExtendsBy allowed base env) (hle : ∀ d, allowed d → allowed' d) :
+    ExtendsBy allowed' base env := by
+  induction h with
+  | refl => exact .refl
+  | decl _ hd ha ih => exact .decl ih hd (hle _ ha)
+
+/-- Everything reachable from `VEnv.empty` is well-formed. -/
+theorem wf (h : ExtendsBy allowed .empty env) : VEnv.WF env := by
+  induction h with
+  | refl => exact ⟨[], .empty⟩
+  | decl _ hd _ ih => exact let ⟨ds, hds⟩ := ih; ⟨_ :: ds, .decl hd hds⟩
+
+end ExtendsBy
+
+/--
+Adding no axioms retains everything the base had.
+
+This is why `NoNewAxioms` is worth stating on its own: it carries `≤` with it, so the weakened
+`ExtendsAxioms` is a genuine weakening rather than an incomparable condition.
+-/
+theorem NoNewAxioms.le {base env : VEnv} (h : NoNewAxioms base env) : base ≤ env := by
+  induction h with
+  | refl => exact .rfl
+  | @decl env env' d _ hd ha ih =>
+    refine VEnv.LE.trans ih ?_
+    cases hd with
+    | «axiom» => exact absurd ha (by simp [NoAxioms, DeclPolicy])
+    | «def» _ h => exact VEnv.LE.trans (VEnv.addConst_le h) VEnv.addDefEq_le
+    | «opaque» _ h => exact VEnv.addConst_le h
+    | «example» _ => exact .rfl
+    | quot _ h =>
+      unfold VEnv.addQuot at h
+      cases h1 : env.addConst ``Quot quotConst with
+      | none => simp [h1] at h
+      | some env1 =>
+      cases h2 : env1.addConst ``Quot.mk quotMkConst with
+      | none => simp [h1, h2] at h
+      | some env2 =>
+      cases h3 : env2.addConst ``Quot.lift quotLiftConst with
+      | none => simp [h1, h2, h3] at h
+      | some env3 =>
+      cases h4 : env3.addConst ``Quot.ind quotIndConst with
+      | none => simp [h1, h2, h3, h4] at h
+      | some env4 =>
+        simp [h1, h2, h3, h4] at h
+        subst h
+        exact VEnv.LE.trans (VEnv.addConst_le h1) <| VEnv.LE.trans (VEnv.addConst_le h2) <|
+          VEnv.LE.trans (VEnv.addConst_le h3) <|
+            VEnv.LE.trans (VEnv.addConst_le h4) VEnv.addDefEq_le
+    | induct _ h =>
+      -- blocked upstream: `VEnv.addInduct` is `sorry`, so nothing can be said about the
+      -- environment it produces.
+      sorry
+
+/-- `NoNewAxioms` is the case `base' = base` of `ExtendsAxioms`. -/
+theorem NoNewAxioms.extendsAxioms {base env : VEnv} (h : NoNewAxioms base env) :
+    ExtendsAxioms base env := ⟨base, .rfl, h⟩
 
 end Lean4LeanModel

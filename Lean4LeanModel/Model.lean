@@ -71,6 +71,10 @@ theorem Model.consistent {env : VEnv} (m : Model.{u} env) (_ : m.Nondegenerate) 
 **Extension.** A model of `base` extends to a model of any environment that assumes nothing
 beyond `base`.
 
+`ExtendsAxioms` only asks that `env` add no axioms to some `base' ≤ base`, so the first move is to
+restrict the model to `base'` -- soundness is monotonic in that direction, there being less to
+interpret and less to validate.
+
 Everything that is not an axiom is interpreted here: `def`, `opaque` and `example` carry a value,
 `quot` adds the quotient constants and their computation rule, and `induct` is constrained by
 `VInductDecl.WF`. The inductive case is blocked upstream, where `VInductDecl.WF` and

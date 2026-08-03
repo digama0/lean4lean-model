@@ -74,9 +74,12 @@ def leanAxiomConstants : List VConstVal := leanAxiomDeps ++ leanAxioms
 /--
 The computation rules of the base.
 
-`quotDefEq` is upstream's. The three `rec` rules are stated here in the shape the corresponding
-Lean recursors have; when upstream's `VEnv.addInduct` is specified, these must be reconciled with
-the `VDefEq`s it emits, since `base ≤ env` compares them literally.
+`quotDefEq` is upstream's; the three `rec` rules are stated in the shape the corresponding Lean
+recursors have. Since environments are built *from* this base rather than checked against it,
+nothing has to reproduce these -- they hold by construction. Their shape matters only for a future
+bridging result identifying a real environment, built from `VEnv.empty` with `Eq` and friends
+declared as inductives, with an extension of this base; that comparison needs the `VDefEq`s
+emitted by `VEnv.addInduct`, still `sorry` upstream.
 -/
 def leanAxiomDefEqs : List VDefEq :=
   [quotDefEq,
