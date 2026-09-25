@@ -28,3 +28,6 @@ jobs:
         with:
           build: true
           use-mathlib-cache: true
+
+      - name: Check local proof debt
+        run: ./scripts/check-proof-debt.sh
